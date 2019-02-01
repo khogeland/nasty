@@ -43,7 +43,7 @@ func addCause[T](m: Match[T], cause: Match[system.any]): Match[T] =
     return Match[T](
       success: false,
       index: m.index,
-      reason: m.reason & " (Caused by: " & cause.reason & ")"
+      reason: m.reason & "\n Caused by: " & cause.reason
     )
 
 func C(c: char): Matcher[char] =
@@ -56,7 +56,7 @@ func C(c: char): Matcher[char] =
 
     return (Match[char](
       success: false,
-      reason: "Unexpected character, found '" & current & "', expected '" & c & "'",
+      reason: "Unexpected character, found " & current & ", expected " & c,
       index: update.index,
     ), p)
 
@@ -137,21 +137,31 @@ func `|`[T](m1, m2: Matcher[T]): Matcher[T] =
     return (Match[T](
       success: false,
       index: match2.index,
-      reason: "Could not match either condition: " & match1.reason & ", " & match2.reason
+      reason: "Could not match either condition: \n\t@" & $match1.index & ": " & match1.reason.replace("\n", "\n\t") & ",\n\t@" & $match2.index & ": " & match2.reason.replace("\n", "\n\t")
     ), p)
 
-func until[T](matcher: Matcher[T], fail: func(t: T): bool): Matcher[seq[T]] =
+func until[T](matcher: Matcher[T], fail: func(t: T): bool, minCount = 1): Matcher[seq[T]] =
   return func(p: ParseState): (Match[seq[T]], ParseState) =
     var ret: seq[T] = @[]
     var state = p
     while true:
       let (match, s) = matcher(state)
-      if match.success and not fail(match.matchData):
-        state = s
-        ret &= match.matchData
+      if match.success:
+        if fail(match.matchData):
+          if len(ret) < minCount:
+            return (Match[seq[T]](
+              success: false,
+              index: s.index,
+              reason: "Failed before reaching minCount"
+            ), p)
+          return success[seq[T]](ret, state)
+        else:
+          state = s
+          ret &= match.matchData
       else:
-        break
-    return success[seq[T]](ret, state)
+        if len(ret) < minCount:
+          return (cast[Match[seq[T]]](match), p)
+        return success[seq[T]](ret, state)
 #
 
 func charIn(chars: string): Matcher[char] =
@@ -164,7 +174,7 @@ func charIn(chars: string): Matcher[char] =
     return (Match[char](
       success: false,
       index: state.index,
-      reason: "Unexpected character '" & c & "', expecting one of: " & join(chars, ", ")
+      reason: "Unexpected character " & c & ", expecting one of: " & join(chars, ", ")
     ),p)
 
 func anyChar(p: ParseState): (Match[char], ParseState) =
@@ -186,14 +196,19 @@ func match[T](input: string, matcher: Matcher[T]): Match[T] =
     input: toSeq(input.items),
     index: 0
   )
-  return matcher(state)[0]
+  let (match, update) = matcher(state)
+  if match.success and update.index != len(input):
+    return Match[T](
+      success: false,
+      index: update.index,
+      reason: "Trailing input: " & input[update.index..^1]
+    )
+  return match
 
 let matchA = 'a'
 let matchBs = 'b'.repeat
 
 echo "a".match(matchA)
-echo "b".match(matchA)
-echo "arostine".match(matchBs)
 echo "b".match(matchBs)
 echo "bbbbb".match(matchBs.asString)
 
@@ -201,32 +216,33 @@ echo "bbbaaaaaaabbbbbb".match('b'.repeat.asString & 'a'.repeat.asString & 'b'.re
 echo "arst".match("ars" & 't')
 echo "bbbaaaaaaabababababbababbbbb".match( ('a'.repeat.asString | 'b'.repeat.asString).repeat )
 
+func describe(m: Matcher[string], desc: string): Matcher[string] = m.map(s => desc & "(" & s.unescape("", "") & ")")
 
 let whitespace = charIn(" \n\r\t\b\f").anyCount.asString
 let escape = ('\\' & anyChar).asString
 let doubleQuotesNoEscape = anyChar.until(c => c in "\\\"").asString
-let doubleQuotesString = (doubleQuotesNoEscape | escape).repeat.asString.map(s => unescape(s))
+let doubleQuotesString = (doubleQuotesNoEscape | escape).repeat.asString.map(s => unescape(s, "", ""))
 let singleQuotesNoEscape = anyChar.until(c => c in "\\'").asString
-let singleQuotesString = (singleQuotesNoEscape | escape).repeat.asString.map(s => unescape(s))
+let singleQuotesString = (singleQuotesNoEscape | escape).repeat.asString.map(s => unescape(s, "", ""))
 let AND = S("and")
 let OR = S("or")
 let NOT = S("not")
-let key = anyChar.until(c => c in "()!= \t\n\b\r\f").asString
-let value = ((S("\"") & doubleQuotesString & S("\"")) | (S("''") & singleQuotesString & S("''")))
-let equals = (key & whitespace & S("=") & whitespace & value).asString
-let notEquals = (key & whitespace & S("!=") & whitespace & value).asString
+let key = anyChar.until(c => c in "()!= \t\n\b\r\f").asString.describe("key")
+let value = ((S("\"") & doubleQuotesString & S("\"")) | (S("'") & singleQuotesString & S("'"))).asString.describe("value")
+let equals = (key & whitespace & S("=") & whitespace & value).asString.describe("equals")
+let notEquals = (key & whitespace & S("!=") & whitespace & value).asString.describe("notEquals")
 let statement = equals | notEquals
 
-var parens, statementOrNestedExpression, notExpression, negatedExpression, andExpression, orExpression, getOrExpression: proc(): Matcher[string]
+var parens, statementOrNestedExpression, notExpression, negatedExpression, andExpression, orExpression, getOrExpression: func(): Matcher[string]
 
-parens = () => (S("(") & whitespace & orExpression() & whitespace & S(")")).asString
+parens = () => (S("(") & whitespace & orExpression() & whitespace & S(")")).asString.describe("parens")
 statementOrNestedExpression = () => statement | parens()
 notExpression = () => statementOrNestedExpression() | negatedExpression()
-andExpression = () => (notExpression() & whitespace & (AND & whitespace & notExpression()).asString.anyCount).asString
+andExpression = () => (notExpression() & (whitespace & AND & whitespace & notExpression()).repeat(minCount = 0).asString).repeat.asString.describe("andExpression")
 
 orExpression = proc(): Matcher[string] =
   return proc(p: ParseState): (Match[string], ParseState) =
-    let (match, state) = ((andExpression() & whitespace & (OR & whitespace & orExpression()).asString.anyCount).asString)(p)
+    let (match, state) = ((andExpression() & (whitespace & OR & whitespace & orExpression()).repeat(minCount = 0).asString).repeat.asString.describe("orExpression"))(p)
     if match.success: return success[string](match.matchData, state)
     return (Match[string](
       success: false,
@@ -236,7 +252,7 @@ orExpression = proc(): Matcher[string] =
 
 negatedExpression = proc(): Matcher[string] =
   return proc(p: ParseState): (Match[string], ParseState) =
-    let (match, state) = ((NOT & whitespace & notExpression()).asString)(p)
+    let (match, state) = ((NOT & whitespace & notExpression()).asString.describe("negatedExpression"))(p)
     if match.success: return success[string](match.matchData, state)
     return (Match[string](
       success: false,
@@ -246,7 +262,37 @@ negatedExpression = proc(): Matcher[string] =
 
 let filter = (whitespace & orExpression() & whitespace).asString
 
-let foo = "foo='bar'"
-let foo2 = "foo='bar' and (A = '1\\'2' and baz='baz' and (qux='no_match' or qux='ba\"ab' ) ) and q='\n\b\f\r\t'"
-echo foo.match(filter)
-echo foo2.match(filter)
+proc test(input: string, matcher: Matcher[system.any]) =
+  echo input
+  let result = input.match(matcher)
+  if not result.success:
+    echo "failure @" & $result.index & ":"
+    echo result.reason
+  else: echo "success: " & $result.matchData
+
+test("anyrep", anyChar.repeat)
+test("doublerep", doubleQuotesNoEscape.repeat)
+test("doubleesc", doubleQuotesNoEscape)
+test("doublestr", doubleQuotesString)
+test("key", key)
+test("'val'", value)
+test("\\'", escape)
+test("sqs\\'s", singleQuotesString)
+test("'QsqssQ'", S("'") & singleQuotesString & S("'"))
+test("keywhitespace=", key & whitespace & S("="))
+test("='whitespacevalue'", S("=") & whitespace & value)
+test("='nowhitespacevalue'", S("=") & value)
+test("'whitespacevalue'", whitespace & value)
+test("key='val'", equals)
+test("key=\"val\"", equals)
+
+test("foo='bar' and foo='bar'", orExpression())
+test("foo='bar' and (foo='bar')", orExpression())
+test("foo='bar' and foo='bar'", andExpression())
+test("(qux='no_match' or qux='ba\"ab' )", notExpression())
+test("(baz='baz' and (qux='no_match'))", notExpression())
+test("(A = 'b' and A = 'b' and (qux='no_match'))", notExpression())
+test("(A = '1\\'2' and baz='baz' and (qux='no_match' or qux='ba\"ab' ))", notExpression())
+
+let foo = "foo='bar' and (A = '1\\'2' and baz='baz' and (qux='no_match' or qux='ba\"ab' ) ) and q='\n\b\f\r\t'"
+test(foo, filter)
