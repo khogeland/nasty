@@ -8,14 +8,14 @@ func describe(m: Matcher[string], desc: string): Matcher[string] = m.map(s => de
 
 let whitespace = charIn(" \n\r\t\b\f").anyCount.asString
 let escape = ('\\' + anyChar).asString
-let doubleQuotesNoEscape = anyChar.until(func(c: char): bool = c in "\\\"").asString
+let doubleQuotesNoEscape = anyChar.until(c => (c in "\\\"")).asString
 let doubleQuotesString = (doubleQuotesNoEscape | escape).repeat.asString.map(s => unescape(s, "", ""))
-let singleQuotesNoEscape = anyChar.until(func(c: char): bool = c in "\\'").asString
+let singleQuotesNoEscape = anyChar.until(c => c in "\\'").asString
 let singleQuotesString = (singleQuotesNoEscape | escape).repeat.asString.map(s => unescape(s, "", ""))
 let AND = S("and")
 let OR = S("or")
 let NOT = S("not")
-let key = anyChar.until(func(c: char): bool = c in "()!= \t\n\b\r\f").asString.describe("key")
+let key = anyChar.until(c => c in "()!= \t\n\b\r\f").asString.describe("key")
 let value = ((S("\"") + doubleQuotesString &: S("\"")) | (S("'") + singleQuotesString &: S("'"))).asString.describe("value")
 let equals = (key + whitespace &: S("=") &: whitespace &: value).asString.describe("equals")
 let notEquals = (key + whitespace &: S("!=") &: whitespace &: value).asString.describe("notEquals")

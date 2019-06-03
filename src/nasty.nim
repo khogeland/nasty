@@ -171,7 +171,7 @@ func `:?`*[T](m1: Matcher[T], m2: Matcher[system.any]): Matcher[T] =
     if not match2.success: return (cast[Match[T]](match2), p)
     return (match1, state2)
 
-func until*[T](matcher: Matcher[T], terminalMatcher: Matcher[system.any], minCount = 1): Matcher[seq[T]] =
+func untilMatch*[T](matcher: Matcher[T], terminalMatcher: Matcher[system.any], minCount = 1): Matcher[seq[T]] =
   return func(p: ParseState): (Match[seq[T]], ParseState) =
     var ret: seq[T] = @[]
     var state = p
@@ -244,11 +244,11 @@ type Printable = concept x
 
 func asString*[T: Printable](matcher: Matcher[seq[T]]): Matcher[string] = matcher.map(t => join(t, ""))
 
-converter toMatcher*(c: char): Matcher[char] = C(c)
-converter toMatcher*(s: string): Matcher[seq[char]] = inOrder(s.map(c => C(c)))
+converter toCharMatcher*(c: char): Matcher[char] = C(c)
+converter toStringMatcher*(s: string): Matcher[seq[char]] = inOrder(s.map(c => C(c)))
 
 func S*(s: string): Matcher[string] =
-  return toMatcher(s).asString
+  return toStringMatcher(s).asString
 
 func match*[T](input: string, matcher: Matcher[T]): Match[T] =
   var state = ParseState(
