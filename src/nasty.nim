@@ -111,7 +111,7 @@ func inOrder*[T](ms: varargs[Matcher[T]]): Matcher[seq[T]] =
         return (cast[Match[seq[T]]](match), p)
     return success[seq[T]](ret, state)
 
-func `&`*[T](m1, m2: Matcher[seq[T]]): Matcher[seq[T]] =
+func `&&`*[T](m1, m2: Matcher[seq[T]]): Matcher[seq[T]] =
   return func(p: ParseState): (Match[seq[T]], ParseState) =
     let (match1, state1) = m1(p)
     if not match1.success: return (cast[Match[seq[T]]](match1), p)
@@ -119,7 +119,7 @@ func `&`*[T](m1, m2: Matcher[seq[T]]): Matcher[seq[T]] =
     if not match2.success: return (cast[Match[seq[T]]](match2), p)
     return success[seq[T]](match1.matchData & match2.matchData, state2)
 
-func `&`*[T](m1: Matcher[seq[T]], m2: Matcher[T]): Matcher[seq[T]] =
+func `&:`*[T](m1: Matcher[seq[T]], m2: Matcher[T]): Matcher[seq[T]] =
   return func(p: ParseState): (Match[seq[T]], ParseState) =
     let (match1, state1) = m1(p)
     if not match1.success: return (cast[Match[seq[T]]](match1), p)
@@ -127,7 +127,7 @@ func `&`*[T](m1: Matcher[seq[T]], m2: Matcher[T]): Matcher[seq[T]] =
     if not match2.success: return (cast[Match[seq[T]]](match2), p)
     return success[seq[T]](match1.matchData & match2.matchData, state2)
 
-func `&`*[T](m1: Matcher[T], m2: Matcher[seq[T]]): Matcher[seq[T]] =
+func `:&`*[T](m1: Matcher[T], m2: Matcher[seq[T]]): Matcher[seq[T]] =
   return func(p: ParseState): (Match[seq[T]], ParseState) =
     let (match1, state1) = m1(p)
     if not match1.success: return (cast[Match[seq[T]]](match1), p)
@@ -135,9 +135,9 @@ func `&`*[T](m1: Matcher[T], m2: Matcher[seq[T]]): Matcher[seq[T]] =
     if not match2.success: return (cast[Match[seq[T]]](match2), p)
     return success[seq[T]](match1.matchData & match2.matchData, state2)
 
-func `&`*[T](m1, m2: Matcher[T]): Matcher[seq[T]] = inOrder[T](m1, m2)
+func `+`*[T](m1, m2: Matcher[T]): Matcher[seq[T]] = inOrder[T](m1, m2)
 
-func `&&`*[T1, T2](m1: Matcher[T1], m2: Matcher[T2]): Matcher[(T1,T2)] =
+func `++`*[T1, T2](m1: Matcher[T1], m2: Matcher[T2]): Matcher[(T1,T2)] =
   return func(p: ParseState): (Match[(T1, T2)], ParseState) =
     let (match1, state1) = m1(p)
     if not match1.success: return (cast[Match[(T1, T2)]](match1), p)
@@ -156,6 +156,20 @@ func `|`*[T](m1, m2: Matcher[T]): Matcher[T] =
       index: match2.index,
       reason: "Could not match either condition: \n\t@" & $match1.index & ": " & match1.reason.replace("\n", "\n\t") & ",\n\t@" & $match2.index & ": " & match2.reason.replace("\n", "\n\t")
     ), p)
+
+func `?:`*[T](m1: Matcher[system.any], m2: Matcher[T]): Matcher[T] =
+  return func(p: ParseState): (Match[T], ParseState) =
+    let (match1, state1) = m1(p)
+    if not match1.success: return (cast[Match[(T)]](match1), p)
+    return m2(p)
+
+func `:?`*[T](m1: Matcher[T], m2: Matcher[system.any]): Matcher[T] =
+  return func(p: ParseState): (Match[T], ParseState) =
+    let (match1, state1) = m1(p)
+    if not match1.success: return (cast[Match[T]](match1), p)
+    let (match2, state2) = m2(state1)
+    if not match2.success: return (cast[Match[T]](match2), p)
+    return (match1, state2)
 
 func until*[T](matcher: Matcher[T], terminalMatcher: Matcher[system.any], minCount = 1): Matcher[seq[T]] =
   return func(p: ParseState): (Match[seq[T]], ParseState) =
@@ -223,9 +237,12 @@ func anyChar*(p: ParseState): (Match[char], ParseState) =
   let (c, state) = p.consume()
   if c == '\0':
     return (noMoreInput[char](state), p)
-  return success[char](c, state)
+  return success(c, state)
 
-func asString*[T](matcher: Matcher[seq[T]]): Matcher[string] = matcher.map(t => join(t, ""))
+type Printable = concept x
+  $x is string
+
+func asString*[T: Printable](matcher: Matcher[seq[T]]): Matcher[string] = matcher.map(t => join(t, ""))
 
 converter toMatcher*(c: char): Matcher[char] = C(c)
 converter toMatcher*(s: string): Matcher[seq[char]] = inOrder(s.map(c => C(c)))
@@ -243,7 +260,7 @@ func match*[T](input: string, matcher: Matcher[T]): Match[T] =
     return Match[T](
       success: false,
       index: update.index,
-      reason: "Trailing input: " & input[update.index..^1]
+      reason: "Trailing input ->" & input[update.index..^1]
     )
   return match
 

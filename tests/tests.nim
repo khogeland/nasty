@@ -7,30 +7,30 @@ import
 func describe(m: Matcher[string], desc: string): Matcher[string] = m.map(s => desc & "(" & s.unescape("", "") & ")")
 
 let whitespace = charIn(" \n\r\t\b\f").anyCount.asString
-let escape = ('\\' & anyChar).asString
-let doubleQuotesNoEscape = anyChar.until(c => c in "\\\"").asString
+let escape = ('\\' + anyChar).asString
+let doubleQuotesNoEscape = anyChar.until(func(c: char): bool = c in "\\\"").asString
 let doubleQuotesString = (doubleQuotesNoEscape | escape).repeat.asString.map(s => unescape(s, "", ""))
-let singleQuotesNoEscape = anyChar.until(c => c in "\\'").asString
+let singleQuotesNoEscape = anyChar.until(func(c: char): bool = c in "\\'").asString
 let singleQuotesString = (singleQuotesNoEscape | escape).repeat.asString.map(s => unescape(s, "", ""))
 let AND = S("and")
 let OR = S("or")
 let NOT = S("not")
-let key = anyChar.until(c => c in "()!= \t\n\b\r\f").asString.describe("key")
-let value = ((S("\"") & doubleQuotesString & S("\"")) | (S("'") & singleQuotesString & S("'"))).asString.describe("value")
-let equals = (key & whitespace & S("=") & whitespace & value).asString.describe("equals")
-let notEquals = (key & whitespace & S("!=") & whitespace & value).asString.describe("notEquals")
+let key = anyChar.until(func(c: char): bool = c in "()!= \t\n\b\r\f").asString.describe("key")
+let value = ((S("\"") + doubleQuotesString &: S("\"")) | (S("'") + singleQuotesString &: S("'"))).asString.describe("value")
+let equals = (key + whitespace &: S("=") &: whitespace &: value).asString.describe("equals")
+let notEquals = (key + whitespace &: S("!=") &: whitespace &: value).asString.describe("notEquals")
 let statement = equals | notEquals
 
 var parens, statementOrNestedExpression, notExpression, negatedExpression, andExpression, orExpression, getOrExpression: func(): Matcher[string]
 
-parens = () => (S("(") & whitespace & orExpression() & whitespace & S(")")).asString.describe("parens")
+parens = () => (S("(") + whitespace &: orExpression() &: whitespace &: S(")")).asString.describe("parens")
 statementOrNestedExpression = () => statement | parens()
 notExpression = () => statementOrNestedExpression() | negatedExpression()
-andExpression = () => (notExpression() & (whitespace & AND & whitespace & notExpression()).repeat(minCount = 0).asString).repeat.asString.describe("andExpression")
+andExpression = () => (notExpression() + (whitespace + AND &: whitespace &: notExpression()).repeat(minCount = 0).asString).repeat.asString.describe("andExpression")
 
 orExpression = proc(): Matcher[string] =
   return proc(p: ParseState): (Match[string], ParseState) =
-    let (match, state) = ((andExpression() & (whitespace & OR & whitespace & orExpression()).repeat(minCount = 0).asString).repeat.asString.describe("orExpression"))(p)
+    let (match, state) = ((andExpression() + (whitespace + OR &: whitespace &: orExpression()).repeat(minCount = 0).asString).repeat.asString.describe("orExpression"))(p)
     if match.success: return success[string](match.matchData, state)
     return (Match[string](
       success: false,
@@ -40,7 +40,7 @@ orExpression = proc(): Matcher[string] =
 
 negatedExpression = proc(): Matcher[string] =
   return proc(p: ParseState): (Match[string], ParseState) =
-    let (match, state) = ((NOT & whitespace & notExpression()).asString.describe("negatedExpression"))(p)
+    let (match, state) = ((NOT + whitespace &: notExpression()).asString.describe("negatedExpression"))(p)
     if match.success: return success[string](match.matchData, state)
     return (Match[string](
       success: false,
@@ -48,7 +48,7 @@ negatedExpression = proc(): Matcher[string] =
       reason: "Could not parse expression: " & match.reason
     ), p)
 
-let filter = (whitespace & orExpression() & whitespace).asString
+let filter = (whitespace + orExpression() &: whitespace).asString
 
 proc test(input: string, matcher: Matcher[system.any]) =
   let result = input.match(matcher)
@@ -59,19 +59,22 @@ proc test(input: string, matcher: Matcher[system.any]) =
 
 suite "nasty test":
   test "all the things":
+    test("aa", 'a' + anyChar)
     test("anyrep", anyChar.repeat)
     test("doublerep", doubleQuotesNoEscape.repeat)
     test("doubleesc", doubleQuotesNoEscape)
     test("doublestr", doubleQuotesString)
     test("key", key)
     test("'val'", value)
+    test("\\", '\\')
+    test("\\'", '\\' & '\'')
     test("\\'", escape)
     test("sqs\\'s", singleQuotesString)
-    test("'QsqssQ'", S("'") & singleQuotesString & S("'"))
-    test("keywhitespace=", key & whitespace & S("="))
-    test("='whitespacevalue'", S("=") & whitespace & value)
-    test("='nowhitespacevalue'", S("=") & value)
-    test("'whitespacevalue'", whitespace & value)
+    test("'QsqssQ'", S("'") + singleQuotesString &: S("'"))
+    test("keywhitespace=", key + whitespace &: S("="))
+    test("='whitespacevalue'", S("=") + whitespace &: value)
+    test("='nowhitespacevalue'", S("=") + value)
+    test("'whitespacevalue'", whitespace + value)
     test("key='val'", equals)
     test("key=\"val\"", equals)
 
