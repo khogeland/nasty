@@ -161,7 +161,7 @@ func `?:`*[T](m1: Matcher[system.any], m2: Matcher[T]): Matcher[T] =
   return func(p: ParseState): (Match[T], ParseState) =
     let (match1, state1) = m1(p)
     if not match1.success: return (cast[Match[(T)]](match1), p)
-    return m2(p)
+    return m2(state1)
 
 func `:?`*[T](m1: Matcher[T], m2: Matcher[system.any]): Matcher[T] =
   return func(p: ParseState): (Match[T], ParseState) =
@@ -238,6 +238,19 @@ func anyChar*(p: ParseState): (Match[char], ParseState) =
   if c == '\0':
     return (noMoreInput[char](state), p)
   return success(c, state)
+
+type Empty* = object
+
+func ending*(p: ParseState): (Match[Empty], ParseState) =
+  let (c, _) = p.consume()
+  if c == '\0':
+    return success(Empty(),p)
+  return (Match[Empty](
+      success: false,
+      index: p.index,
+      reason: "Unexpected character " & c
+  ),p)
+
 
 type Printable = concept x
   $x is string
