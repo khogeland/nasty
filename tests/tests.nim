@@ -4,7 +4,7 @@ import
   strutils,
   ../src/nasty
 
-func describe(m: Matcher[string], desc: string): Matcher[string] = m.map(s => desc & "(" & s.unescape("", "") & ")")
+proc describe(m: Matcher[string], desc: string): Matcher[string] = m.map(s => desc & "(" & s.unescape("", "") & ")")
 
 let whitespace = charIn(" \n\r\t\b\f").anyCount.asString
 let escape = ('\\' + anyChar).asString
@@ -21,7 +21,7 @@ let equals = (key + whitespace &: S("=") &: whitespace &: value).asString.descri
 let notEquals = (key + whitespace &: S("!=") &: whitespace &: value).asString.describe("notEquals")
 let statement = equals | notEquals
 
-var parens, statementOrNestedExpression, notExpression, negatedExpression, andExpression, orExpression, getOrExpression: func(): Matcher[string]
+var parens, statementOrNestedExpression, notExpression, negatedExpression, andExpression, orExpression, getOrExpression: proc(): Matcher[string]
 
 parens = () => (S("(") + whitespace &: orExpression() &: whitespace &: S(")")).asString.describe("parens")
 statementOrNestedExpression = () => statement | parens()

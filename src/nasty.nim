@@ -6,7 +6,7 @@ import
   options
 
 type
-  Matcher*[T] = func(p: ParseState): (Match[T], ParseState)
+  Matcher*[T] = proc(p: ParseState): (Match[T], ParseState) 
   ParseState* = object
     input*: seq[char]
     index*: int
@@ -19,25 +19,25 @@ type
       reason*: string
 
 # Returns the next character, or 0 if there is no more input
-func consume*(p: ParseState): (char, ParseState) =
+proc consume*(p: ParseState): (char, ParseState) =
   if p.index >= len(p.input): return ('\0', p)
   let c = p.input[p.index]
   var p2 = p
   p2.index += 1
   return (c, p2)
 
-func noMoreInput*[T](p: ParseState): Match[T] = Match[T](
+proc noMoreInput*[T](p: ParseState): Match[T] = Match[T](
   success: false,
   reason: "No more input to consume.",
   index: p.index
 )
 
-func success*[T](t: T, p: ParseState): (Match[T], ParseState) = (Match[T](
+proc success*[T](t: T, p: ParseState): (Match[T], ParseState) = (Match[T](
   success: true,
   matchData: t
 ), p)
 
-func addCause*[T](m: Match[T], cause: Match[system.any]): Match[T] =
+proc addCause*[T](m: Match[T], cause: Match[system.any]): Match[T] =
   if m.success or cause.success:
     raise newException(Exception, "Attempted to call addCause with successful match")
   else:
@@ -47,8 +47,8 @@ func addCause*[T](m: Match[T], cause: Match[system.any]): Match[T] =
       reason: m.reason & "\n Caused by: " & cause.reason
     )
 
-func C*(c: char): Matcher[char] =
-  return func(p: ParseState): (Match[char], ParseState) =
+proc C*(c: char): Matcher[char] =
+  return proc(p: ParseState): (Match[char], ParseState) =
     let (current, update) = p.consume()
     if current == '\0':
       return (noMoreInput[char](update), p)
@@ -61,8 +61,8 @@ func C*(c: char): Matcher[char] =
       index: update.index,
     ), p)
 
-func repeat*[T](matcher: Matcher[T], minCount: int = 1, maxCount: int = -1): Matcher[seq[T]] =
-  return func(p: ParseState): (Match[seq[T]], ParseState) =
+proc repeat*[T](matcher: Matcher[T], minCount: int = 1, maxCount: int = -1): Matcher[seq[T]] =
+  return proc(p: ParseState): (Match[seq[T]], ParseState) =
     var ret: seq[T] = @[]
     var state = p
     while true:
@@ -82,11 +82,11 @@ func repeat*[T](matcher: Matcher[T], minCount: int = 1, maxCount: int = -1): Mat
         else:
           return success[seq[T]](ret, state)
 
-func anyCount*[T](m: Matcher[T]): Matcher[seq[T]] = repeat(m, minCount = 0, maxCount = -1)
-func upTo*[T](m: Matcher[T], count: int): Matcher[seq[T]] = repeat(m, minCount = 0, maxCount = count)
+proc anyCount*[T](m: Matcher[T]): Matcher[seq[T]] = repeat(m, minCount = 0, maxCount = -1)
+proc upTo*[T](m: Matcher[T], count: int): Matcher[seq[T]] = repeat(m, minCount = 0, maxCount = count)
 
-func map*[T,O](matcher: Matcher[T], mapper: func(m: T): O): Matcher[O] =
-  return func(p: ParseState): (Match[O], ParseState) =
+proc map*[T,O](matcher: Matcher[T], mapper: proc(m: T): O): Matcher[O] =
+  return proc(p: ParseState): (Match[O], ParseState) =
     let (match, state) = matcher(p)
     if match.success:
       return success[O](mapper(match.matchData), state)
@@ -97,9 +97,9 @@ func map*[T,O](matcher: Matcher[T], mapper: func(m: T): O): Matcher[O] =
         reason: match.reason
       ), state)
 
-func inOrder*[T](ms: varargs[Matcher[T]]): Matcher[seq[T]] =
+proc inOrder*[T](ms: varargs[Matcher[T]]): Matcher[seq[T]] =
   let matchers = @ms
-  return func(p: ParseState): (Match[seq[T]], ParseState) =
+  return proc(p: ParseState): (Match[seq[T]], ParseState) =
     var ret: seq[T] = @[]
     var state = p
     for matcher in matchers:
@@ -111,42 +111,42 @@ func inOrder*[T](ms: varargs[Matcher[T]]): Matcher[seq[T]] =
         return (cast[Match[seq[T]]](match), p)
     return success[seq[T]](ret, state)
 
-func `&&`*[T](m1, m2: Matcher[seq[T]]): Matcher[seq[T]] =
-  return func(p: ParseState): (Match[seq[T]], ParseState) =
+proc `&&`*[T](m1, m2: Matcher[seq[T]]): Matcher[seq[T]] =
+  return proc(p: ParseState): (Match[seq[T]], ParseState) =
     let (match1, state1) = m1(p)
     if not match1.success: return (cast[Match[seq[T]]](match1), p)
     let (match2, state2) = m2(state1)
     if not match2.success: return (cast[Match[seq[T]]](match2), p)
     return success[seq[T]](match1.matchData & match2.matchData, state2)
 
-func `&:`*[T](m1: Matcher[seq[T]], m2: Matcher[T]): Matcher[seq[T]] =
-  return func(p: ParseState): (Match[seq[T]], ParseState) =
+proc `&:`*[T](m1: Matcher[seq[T]], m2: Matcher[T]): Matcher[seq[T]] =
+  return proc(p: ParseState): (Match[seq[T]], ParseState) =
     let (match1, state1) = m1(p)
     if not match1.success: return (cast[Match[seq[T]]](match1), p)
     let (match2, state2) = m2(state1)
     if not match2.success: return (cast[Match[seq[T]]](match2), p)
     return success[seq[T]](match1.matchData & match2.matchData, state2)
 
-func `:&`*[T](m1: Matcher[T], m2: Matcher[seq[T]]): Matcher[seq[T]] =
-  return func(p: ParseState): (Match[seq[T]], ParseState) =
+proc `:&`*[T](m1: Matcher[T], m2: Matcher[seq[T]]): Matcher[seq[T]] =
+  return proc(p: ParseState): (Match[seq[T]], ParseState) =
     let (match1, state1) = m1(p)
     if not match1.success: return (cast[Match[seq[T]]](match1), p)
     let (match2, state2) = m2(state1)
     if not match2.success: return (cast[Match[seq[T]]](match2), p)
     return success[seq[T]](match1.matchData & match2.matchData, state2)
 
-func `+`*[T](m1, m2: Matcher[T]): Matcher[seq[T]] = inOrder[T](m1, m2)
+proc `+`*[T](m1, m2: Matcher[T]): Matcher[seq[T]] = inOrder[T](m1, m2)
 
-func `++`*[T1, T2](m1: Matcher[T1], m2: Matcher[T2]): Matcher[(T1,T2)] =
-  return func(p: ParseState): (Match[(T1, T2)], ParseState) =
+proc `++`*[T1, T2](m1: Matcher[T1], m2: Matcher[T2]): Matcher[(T1,T2)] =
+  return proc(p: ParseState): (Match[(T1, T2)], ParseState) =
     let (match1, state1) = m1(p)
     if not match1.success: return (cast[Match[(T1, T2)]](match1), p)
     let (match2, state2) = m2(state1)
     if not match2.success: return (cast[Match[(T1, T2)]](match2), p)
     return success[(T1, T2)]((match1.matchData, match2.matchData), state2)
 
-func `|`*[T](m1, m2: Matcher[T]): Matcher[T] =
-  return func(p: ParseState): (Match[T], ParseState) =
+proc `|`*[T](m1, m2: Matcher[T]): Matcher[T] =
+  return proc(p: ParseState): (Match[T], ParseState) =
     let (match1, state1) = m1(p)
     if match1.success: return (match1, state1)
     let (match2, state2) = m2(p)
@@ -157,22 +157,22 @@ func `|`*[T](m1, m2: Matcher[T]): Matcher[T] =
       reason: "Could not match either condition: \n\t@" & $match1.index & ": " & match1.reason.replace("\n", "\n\t") & ",\n\t@" & $match2.index & ": " & match2.reason.replace("\n", "\n\t")
     ), p)
 
-func `?:`*[T](m1: Matcher[system.any], m2: Matcher[T]): Matcher[T] =
-  return func(p: ParseState): (Match[T], ParseState) =
+proc `?:`*[T](m1: Matcher[system.any], m2: Matcher[T]): Matcher[T] =
+  return proc(p: ParseState): (Match[T], ParseState) =
     let (match1, state1) = m1(p)
     if not match1.success: return (cast[Match[(T)]](match1), p)
     return m2(state1)
 
-func `:?`*[T](m1: Matcher[T], m2: Matcher[system.any]): Matcher[T] =
-  return func(p: ParseState): (Match[T], ParseState) =
+proc `:?`*[T](m1: Matcher[T], m2: Matcher[system.any]): Matcher[T] =
+  return proc(p: ParseState): (Match[T], ParseState) =
     let (match1, state1) = m1(p)
     if not match1.success: return (cast[Match[T]](match1), p)
     let (match2, state2) = m2(state1)
     if not match2.success: return (cast[Match[T]](match2), p)
     return (match1, state2)
 
-func untilMatch*[T](matcher: Matcher[T], terminalMatcher: Matcher[system.any], minCount = 1): Matcher[seq[T]] =
-  return func(p: ParseState): (Match[seq[T]], ParseState) =
+proc untilMatch*[T](matcher: Matcher[T], terminalMatcher: Matcher[system.any], minCount = 1): Matcher[seq[T]] =
+  return proc(p: ParseState): (Match[seq[T]], ParseState) =
     var ret: seq[T] = @[]
     var state = p
     while true:
@@ -196,8 +196,8 @@ func untilMatch*[T](matcher: Matcher[T], terminalMatcher: Matcher[system.any], m
           return success[seq[T]](ret, state)
 
 
-func until*[T](matcher: Matcher[T], fail: func(t: T): bool, minCount = 1): Matcher[seq[T]] =
-  return func(p: ParseState): (Match[seq[T]], ParseState) =
+proc until*[T](matcher: Matcher[T], fail: proc(t: T): bool, minCount = 1): Matcher[seq[T]] =
+  return proc(p: ParseState): (Match[seq[T]], ParseState) =
     var ret: seq[T] = @[]
     var state = p
     while true:
@@ -220,8 +220,8 @@ func until*[T](matcher: Matcher[T], fail: func(t: T): bool, minCount = 1): Match
         return success[seq[T]](ret, state)
 #
 
-func charIn*(chars: string): Matcher[char] =
-  return func(p: ParseState): (Match[char], ParseState) =
+proc charIn*(chars: string): Matcher[char] =
+  return proc(p: ParseState): (Match[char], ParseState) =
     let (c, state) = p.consume()
     if c == '\0':
       return (noMoreInput[char](state), p)
@@ -233,7 +233,7 @@ func charIn*(chars: string): Matcher[char] =
       reason: "Unexpected character " & c & ", expecting one of: " & join(chars, ", ")
     ),p)
 
-func anyChar*(p: ParseState): (Match[char], ParseState) =
+proc anyChar*(p: ParseState): (Match[char], ParseState) =
   let (c, state) = p.consume()
   if c == '\0':
     return (noMoreInput[char](state), p)
@@ -241,7 +241,7 @@ func anyChar*(p: ParseState): (Match[char], ParseState) =
 
 type Empty* = object
 
-func ending*(p: ParseState): (Match[Empty], ParseState) =
+proc ending*(p: ParseState): (Match[Empty], ParseState) =
   let (c, _) = p.consume()
   if c == '\0':
     return success(Empty(),p)
@@ -255,15 +255,15 @@ func ending*(p: ParseState): (Match[Empty], ParseState) =
 type Printable = concept x
   $x is string
 
-func asString*[T: Printable](matcher: Matcher[seq[T]]): Matcher[string] = matcher.map(t => join(t, ""))
+proc asString*[T: Printable](matcher: Matcher[seq[T]]): Matcher[string] = matcher.map(ts => join(ts, ""))
 
 converter toCharMatcher*(c: char): Matcher[char] = C(c)
 converter toStringMatcher*(s: string): Matcher[seq[char]] = inOrder(s.map(c => C(c)))
 
-func S*(s: string): Matcher[string] =
+proc S*(s: string): Matcher[string] =
   return toStringMatcher(s).asString
 
-func match*[T](input: string, matcher: Matcher[T]): Match[T] =
+proc match*[T](input: string, matcher: Matcher[T]): Match[T] =
   var state = ParseState(
     input: toSeq(input.items),
     index: 0
